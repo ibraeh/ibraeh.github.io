@@ -2,9 +2,957 @@
 <html>
 <head>
     <meta charset="UTF-8" />
-    <title>title</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://unpkg.com/d3-simple-slider"></script>
+    <script src="https://kit.fontawesome.com/2821810212.js" crossorigin="anonymous"></script>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <title>Los Angeles Crime Data</title>
+
+    
+
+    <style>
+        /* Adding CSS animation for circle appearance */
+        circle {
+          opacity: 0;
+          animation: fadeIn 1s ease forwards;
+        }
+    
+        @keyframes fadeIn {
+          from {
+            opacity: 0;
+          }
+          to {
+            opacity: 0.9;
+          }
+        }
+
+        /* brushed zoomed area  */
+        .selected_ {
+          opacity: 1 !important;
+          /* stroke: black; */
+          stroke: black;
+          stroke-width: 1px;
+        } 
+        
+        /* brushed area  */
+        .selectedBrush {
+          opacity: 1 !important;
+          /* stroke: black; */
+          stroke: black;
+          stroke-width: 1px;
+        }
+        
+        .selected {
+            opacity: 1 !important;
+        }
+
+        .unselected  {
+            opacity: 0.1 !important ;
+        }
+        
+      </style>
 </head>
 <body>
-    <h1>Welcome</h1>
+   
+    
+    <div class="container-fluid">
+      <div class="row">
+        <div id="viz" class=" col-xl-8"></div> <!--style="background-color: beige;"-->
+
+        <!-- Brush  -->
+       <div class="col-xl-3 mt-1 d-flex flex-column align-self-start " style="background-color: ivory;">
+            <div class=" form-check form-switch ">
+                <input class="form-check-input " type="checkbox" role="switch" id="flexSwitchCheckDefault">
+                <label class="form-check-label" style="font-family: Arial, Helvetica, sans-serif; font-size: small;" for="flexSwitchCheckDefault">Brush</label>
+                <button type="button" class="btn btn-light btn-sm me-auto" data-bs-toggle="popover"  
+                  data-bs-content="Brush: select an area on the chart with your mouse, resize or move to any position of your choice." >
+                  
+                  <i class="fa-solid fa-circle-info"></i>
+                </button>
+            </div>
+            <!-- Zoom + Pan -->
+            <div class=" form-check form-switch ">
+                <input class="form-check-input " type="checkbox" role="switch" id="flexSwitchCheckDefault2">
+                <label class="form-check-label" style="font-family: Arial, Helvetica, sans-serif; font-size: small;" for="flexSwitchCheckDefault2">Zoom + Pan</label>
+                <button type="button" class="btn btn-light btn-sm me-auto" data-bs-toggle="popover"  
+                  data-bs-content="Pan: double click and hold down on any data point, move the chart to any position of your choice.
+                  Zoom In: double click on the data point to zoom in.
+                  Zoom Out: hold down the shift key and double click on the data point" >
+                  
+                  <i class="fa-solid fa-circle-info"></i>
+                </button>
+            </div>
+            <!-- Brush + Zoom  -->
+            <div class=" form-check form-switch ">
+                <input class="form-check-input " type="checkbox" role="switch" id="flexSwitchCheckDefault3">
+                <label class="form-check-label" style="font-family: Arial; font-size: small;" for="flexSwitchCheckDefault3">Brush + Zoom</label>
+                <button type="button" class="btn btn-light btn-sm me-auto" data-bs-toggle="popover"  
+                data-bs-content="Brush and Zoom: select the desired area or data points." >
+                
+                <i class="fa-solid fa-circle-info"></i>
+              </button>
+            </div>
+
+             <!-- Legend  -->
+            <div class=" form-check form-switch ">
+              <input class="form-check-input " type="checkbox" role="switch" id="flexSwitchCheckDefault4" checked>
+              <label class="form-check-label" style="font-family: Arial; font-size: small;" for="flexSwitchCheckDefault4">Legend</label>
+            </div>
+
+                <!-- Date slider  -->
+            <div class="mt-4  " id="sliderContainer">
+            </div>
+        </div> 
+      </div>
+
+        <!-- Div tags to hold the visualization and tooltip -->
+        <div class="tooltip" id="tooltip"></div>
+
+        <!-- legend container  -->
+        <div id="legendContainer"></div>
+    </div> 
+
+    <!-- Bootstrap Popover script  -->
+    
+      <script>
+      var popoverTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="popover"]'))
+      var popoverList = popoverTriggerList.map(function (popoverTriggerEl) {
+        return new bootstrap.Popover(popoverTriggerEl)
+      })
+      const popover = new bootstrap.Popover('.form-check-input', {
+        container: 'body'
+      })
+  </script>
+  <!-- End Bootstrap Popover script  -->
+
+    <!-- script tag beginning -->
+    <script type="text/javascript">
+        // defining the margins and dimensions of the scatter plot 
+        const margin = {top:60, right:30, bottom:100, left:60};
+        const width = 900 - margin.left - margin.right;
+        const height = 600 - margin.top - margin.bottom;
+
+        // creating the svg container
+        const svg = d3.select('#viz')
+                      .append('svg')
+                      .attr('width', width + margin.left + margin.right)
+                      .attr('height', height + margin.top + margin.bottom)
+                      // .style('background-color', 'whitesmoke') //offwhite, ivory,bonewhite 
+                      .append('g')
+                      .attr('transform', `translate(${margin.left}, ${margin.top})`)      
+
+        
+
+
+        // GETTING THE DATA 
+        d3.json("LA_csv.json")
+        .then( (temp)=>{
+            res = temp.results
+
+            // Convert date strings to Date objects
+            res.forEach(d => {
+                d.DATE_OCC = new Date(d.DATE_OCC);
+                
+            });
+
+            // creating filterData variable 
+            let filteredData = res;
+
+
+
+            // DEFINING THE X SCALE
+            const xExtent = d3.extent(res, d => d.LON); 
+            const x = d3.scaleLinear()
+                        .domain(xExtent)
+                        .range([0, width])
+                        .nice();
+
+
+
+            // DEFINING THE Y SCALE
+            const yExtent =  d3.extent(res, d => d.LAT);
+            const y = d3.scaleLinear()
+                        .domain(yExtent)
+                        .range([height, 0])
+                        .nice();
+
+
+
+            // SETTING UP THE X AXIS 
+            const xAxis = d3.axisBottom(x)
+                            .tickSizeOuter(0)
+                            .tickSizeInner(10)
+                            
+
+
+
+            // SETTING UP THE Y AXIS 
+            const yAxis = d3.axisLeft(y)
+                            .tickSize(-width)
+                            .tickSizeOuter(0);
+
+                
+            // ADDING OR APPENDING THE X AXIS TO THE SVG CONTAINER 
+            const xAxisShow = svg.append('g')
+                                .attr('id', 'x-axis')
+                                .attr('transform', `translate(0,${height})`)
+                                .call(xAxis)
+                                .transition()
+                                .duration(1000)
+
+            // ADDING OR APPENDING THE Y AXIS TO THE SVG CONTAINER 
+            const yAxisShow = svg.append('g')
+                                .attr('id', 'y-axis')
+                                .call(yAxis)
+                                .call((g) => {
+                                      g.select(".domain").remove();
+                                      g.selectAll(".tick line")
+                                      .style('opacity', 0.2)
+                                      .transition()
+                                      .duration(1000)
+                                      .ease(d3.easePoly)
+                                  })
+
+
+            // X LABEL 
+            svg.append('text')
+                .attr('transform', `translate(${width/2},${height+40})`)
+                .attr('text-anchor', 'middle')
+                .text('Longitude')
+                .style('font-family', 'Arial')
+                .style('font-size', 14)
+
+            // Y LABEL 
+            svg.append('text')
+                .attr('x', -margin.top - height/2 + 20)
+                .attr('y', -margin.left + 18  )
+                .attr('text-anchor', 'middle')
+                .attr('transform', 'rotate(-90)')
+                .text('Latitude')
+                .style('font-family', 'Arial')
+                .style('font-size', 14)
+
+            // DATA SOURCE LINK
+            svg.append("a")
+                .attr("href", "https://www.kaggle.com/datasets/shubhamgupta012/crime-data-from-2020-to-present")
+                .attr("target", "_blank")
+              .append("text")
+                .attr("x", (width+margin.right )*0.78)
+                .attr("y", height + margin.bottom )
+                .text("Source: "+"Crime Data From 2020 to Present")
+                .style("fill", "blue")
+                .style('text-anchor', 'middle')
+                .style('font-family', 'Arial')
+                .style('font-size', 12)
+                .attr("dy", "-0.5em");
+
+            // TITLE AND SUBTITLE
+            const header = svg.append('g')
+                                .append('text')
+                                .attr('transform', `translate(0,${-margin.top * 0.6})`)
+            
+              // main title 
+                  header.append('tspan')
+                        .text('Crime Location Distribution')
+                        .style('text-anchor', 'middle')
+                        .style('font-size', 30)
+                        .style('font-family', 'Arial')
+                        .attr('x', width/2)
+                        .attr('y', 8)
+              // subtitle 
+                  header.append('tspan')
+                        .attr('x', width/2)
+                        .attr('y', 10)
+                        .attr('dy', '1.1em')
+                        .style('font-size', '1.0em')
+                        .style('fill', '#555')
+                        .text("Los Angeles Crime Data From 2020 to Present")
+                        .style('text-anchor', 'middle');
+
+             
+
+            // TOOLTIP 
+           
+            const tooltips = d3.select('#tooltip')
+                                .style('background-color', 'rgba(0, 0, 0, 0.8)')
+                                .style('color', '#fff')
+                                .style('font-size', '14px')
+                                .style('padding', '10px')
+                                .style('border-radius', '6px')
+                                .style('box-shadow', '0 2px 4px rgba(0, 0, 0, 0.1)')
+                                .style('position', 'absolute')
+                                .style('opacity', 0)
+                                .style('pointer-events', 'none')
+                                .style('transition', 'opacity 0.3s ease');
+
+
+            // MOUSE OVER 
+            function mouseover(e,d){
+              
+              d3.select(this)
+                .attr("r", 6) // Increase circle radius on hover
+                .style("fill", "lightgray") // Change circle color on hover
+                .transition()          
+            }
+            
+
+            // MOUSE OUT
+            function mouseout(e,d){
+              d3.select(this)
+                .attr("r", 5) // Reset circle radius on mouseout
+                .style("fill", d=>legendVisible?colorScale(d.REG):'steelblue'); // Reset circle color on mouseout
+              
+                tooltips
+                .transition()
+                .style('visibility', 'hidden')
+                .style('opacity', 0)
+                .transition()              
+            }
+
+            // MOUSE MOVE 
+            function mousemove(e,d){
+              tooltips.style("opacity", 0.4)
+                .html(`${d.REG} <br><b>Longitude:</b> ${d.LON} ,<br> <b>Latitude: </b>${d.LAT} 
+                <br><b>Area:</b> ${d.AREA_NAME} 
+                <br><b>Crime:</b> ${d.CRM_DESC}`)
+                .style("top", (event.pageY - 20) + "px")
+                .style("left", (event.pageX + 20) + "px")
+                .style("visibility", "visible")
+                .style("background-color", "#333")
+                .style("color", "#fff")
+                .style("border-radius", "6px")
+                .style("padding", "10px")
+                .style("box-shadow", "0 2px 8px rgba(0, 0, 0, 0.2)")
+                .transition()
+                .duration(200)
+                .style("opacity", 0.9);  
+                
+                                
+            }
+
+
+            // Define the colors for each category
+            const colorScale = d3.scaleOrdinal()
+                .domain(d3.map(res, d=>d.REG))
+                .range(["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728"]);
+
+
+            
+            // INTERACTIVE LEGEND            
+            // Define a variable to track the legend status
+            let legendVisible = true;
+
+              // Function to toggle legend visibility
+              function toggleLegendVisibility() {
+                  if (legendVisible) {
+                      // Deactivate legend
+                      svg.select(".legend").style("display", "none");
+                      legendVisible = false;
+                      
+                  } else {
+                      // Activate legend
+                      svg.select(".legend").style("display", "block");
+                      legendVisible = true;
+
+                  }
+              }
+
+
+            // Function to update data points color based on legend visibility
+              function updateDataPointColor() {
+                  scatter.style("fill", function(d) {
+                      if (legendVisible) {
+                          // Apply color scale if legend is visible
+                          return colorScale(d.REG);
+                      } else {
+                          // Use steelblue if legend is not visible
+                          return "steelblue";
+                      }
+                  });
+              }
+
+              // Event listener for legend switch change
+              d3.select("#flexSwitchCheckDefault4").on("change", function () {
+                  const isChecked = d3.select(this).property("checked");
+                  if (isChecked) {
+                      // Activate legend
+                      toggleLegendVisibility();
+
+                      // Update data point color
+                      updateDataPointColor();
+                  } else {
+                      // Deactivate legend
+                      toggleLegendVisibility();
+
+                      // Update data point color
+                      updateDataPointColor();
+                  }
+              });
+
+                
+             
+
+        
+
+
+            // Add a clipPath: everything out of this area won't be drawn.
+            const clip = svg.append("clipPath")
+                .attr("id", "clip")
+                .append("rect")
+                .attr("width", width )
+                .attr("height", height )
+                .attr("x", 0)
+                .attr("y", 0)
+                .attr("fill", "white");
+
+              // Create the scatter variable: where both the circles and the brush take place
+            const clippy = svg.append('g')
+              .attr("clip-path", "url(#clip)")
+
+
+
+            
+            // ADDING CIRCLES TO MAKE THE SCATTER PLOT 
+            const scatter =
+            clippy.selectAll('circles')
+            // svg.selectAll('circles')
+                .append('g')
+                .data(filteredData)
+                .enter()
+                .append('circle')
+                // .join(
+                //   enter => enter.append('circle'),
+                //   update => update,
+                //   exit => exit.remove()                  
+                //   )
+                  .attr('class', d=>d.REG)
+                  .style("fill", d=>legendVisible?colorScale(d.REG):'steelblue')
+                  .attr('cx', d=>x(d.LON))
+                  .attr('cy', d=>y(d.LAT))
+                  .attr('r',5)                
+                  .on('mouseover', mouseover)
+                  .on('mouseout',mouseout)
+                  .on('mousemove', mousemove)
+                  .style("display", "block");
+
+          
+            
+
+            // LEGEND
+           
+            function createLegend(svg, data, xScale, yScale, xAxisGroup, yAxisGroup) {
+                const legendData = [...new Set(data.map(d => d.REG))];
+
+
+                const colorScale = d3.scaleOrdinal()
+                    .domain(legendData)
+                    .range(d3.schemeCategory10);
+
+                // Create a rectangle for each category
+                const rectSize = 10;
+                const border_padding = 15;
+                const item_padding = 100;
+                const rect_padding = 100;
+                const text_offset = -2;  
+
+                const legend = svg.append("g")
+                    .attr("class", "legend")
+                    .attr('transform', `translate(${width/8},${height+50})`)
+
+                    // legend rectangular box 
+                legend.selectAll("rect")
+                    .data(legendData)
+                    .enter()
+                    .append("rect")
+                    .attr("y", border_padding)
+                    .attr("x", (d, i) => border_padding + 2+ (i * (rectSize + rect_padding)))
+                    .attr("width", rectSize)
+                    .attr("height", rectSize)
+                    .attr("fill", d => colorScale(d))
+                    .style("opacity", 1)
+                    .on("mouseover", function(event, d) {
+                        highlightDataPoints(d, true);
+                    })
+                    .on("mouseleave", function(event, d) {
+                    highlightDataPointsLeave(d, false);
+                    });
+
+                    
+                            
+                            
+                    //    Legend text  
+                legend.selectAll("text")
+                    .data(legendData)
+                    .enter()
+                    .append("text")
+                    .attr("x", (d, i) => border_padding +15 + i * (rectSize + item_padding) + (rectSize / 2) + text_offset)
+                    .attr("y", border_padding + 11)
+                    .text(d => d)
+                    .style('font-family', 'Arial')
+                    .style("font-size", "12px")
+                    .attr("text-anchor", "left")
+                    .style("alignment-baseline", "middle")
+                    .attr("dy", "-0.35em")
+                    .style("cursor", "pointer")
+                    .on("click", function(event, d) {
+                        toggleLegend(event.target, d);
+                    });
+
+                function highlightDataPoints(category, highlight) {
+                // console.log(category)
+                scatter.classed('unselected', d => d.REG !== category);
+                    
+                }
+
+                function highlightDataPointsLeave(category, highlight){
+                scatter.classed('unselected', false);
+                }
+
+
+
+                let activeCategories = [];
+
+                function toggleLegend(legendText,category) {
+                    // Check if the category is currently active
+                    const isActive = activeCategories.includes(category);
+                
+
+                // Toggle the category in activeCategories array
+                if (isActive) {
+                    activeCategories = activeCategories.filter(cat => cat !== category);
+                } else {
+                    activeCategories.push(category);
+                }
+
+                // Update the legend items based on activeCategories
+                svg.selectAll(".legend text")
+                    .style("opacity", d => !activeCategories.includes(d) ? 1 : 0.2)
+                    .style("text-decoration", d => !activeCategories.includes(d) ? "" : "line-through");
+
+                svg.selectAll(".legend rect")
+                    .style("opacity", d => !activeCategories.includes(d) ? 1 : 0.5)
+                
+
+                
+                // Update the chart based on activeCategories
+                const activeDataPoints = data.filter(d => !activeCategories.includes(d.REG));
+                
+                
+
+                            const xx = xScale.domain(d3.extent(activeDataPoints, d => d.LON)).nice();
+                            const yy = yScale.domain(d3.extent(activeDataPoints, d => d.LAT)).nice();
+
+                            svg.selectAll("#x-axis").remove().transition();
+                            svg.selectAll("#y-axis").remove().transition();
+
+                            const xAxis = d3.axisBottom().scale(xx)
+                                        .tickSizeInner(10)
+                                        .tickSizeOuter(0)
+                            const yAxis = d3.axisLeft().scale(yy)
+                                        .tickSize(-width)
+                                        .tickSizeOuter(0);
+
+                            const xAxisShow = svg.append('g')
+                                            .attr('id', 'x-axis')
+                                            .attr('transform', `translate(0,${height})`)
+                                            .call(xAxis)
+                                            .transition()
+                                            .duration(1000);
+
+                            const yAxisShow = svg.append('g')
+                                            .attr('id', 'y-axis')
+                                            .call(yAxis)
+                                            .call((g) => {
+                                                g.select(".domain").remove();
+                                                g.selectAll(".tick line")
+                                                .style('opacity', 0.2)
+                                                .transition()
+                                                .duration(1000)
+                                                .ease(d3.easePoly)
+                                            });
+               
+                                scatter
+                                        .data(activeDataPoints)
+                                        .transition()
+                                        .duration(1000)
+                                        .attr("cx", d => xScale(d.LON))
+                                        .attr("cy", d => yScale(d.LAT))
+                                        // .attr("r", 8)
+                                        .style("fill", d=>legendVisible?colorScale(d.REG):'steelblue')
+                                
+                            }
+                            
+
+                                return legend;
+                            }
+
+
+
+                            // calling the Interactive Legend
+                            createLegend(svg, filteredData, x, y, xAxis, yAxis);
+            
+
+
+            
+
+                        // DATE FILTER 
+                        // Create slider for filtering data by date of occurrence
+                        const dateSliderContainer = d3.select("#sliderContainer");
+                        const dateSliderWidth = 300;
+                        const dateSliderHeight = 50;
+
+                        const dateExtent = d3.extent(res, d => d.DATE_OCC);
+                        const dateSliderScale = d3.scaleTime()
+                            .domain(dateExtent)
+                            .range([0, dateSliderWidth]);
+
+                        const dateSlider = d3.sliderBottom()
+                            .min(dateExtent[0])
+                            .max(dateExtent[1])
+                            .width(dateSliderWidth)
+                            .tickFormat(d3.timeFormat("%d/%m/%Y"))
+                            .ticks(5)
+                            .default(dateExtent)
+                            .fill("#2196f3")
+                            .on("onchange", val => {
+                                filteredData = res.filter(d => d.DATE_OCC >= val[0] && d.DATE_OCC <= val[1]);
+                                                    
+                            const xx = x.domain(d3.extent(filteredData, d => d.LON)).nice();
+                            const yy = y.domain(d3.extent(filteredData, d => d.LAT)).nice();
+
+                            svg.selectAll("#x-axis").remove().transition();
+                            svg.selectAll("#y-axis").remove().transition();
+
+                            const xAxis = d3.axisBottom().scale(xx)
+                                        .tickSizeInner(10)
+                                        .tickSizeOuter(0)
+                            const yAxis = d3.axisLeft().scale(yy)
+                                        .tickSize(-width)
+                                        .tickSizeOuter(0);
+
+                            const xAxisShow = svg.append('g')
+                                            .attr('id', 'x-axis')
+                                            .attr('transform', `translate(0,${height})`)
+                                            .call(xAxis)
+                                            .transition()
+                                            .duration(1000);
+
+                            const yAxisShow = svg.append('g')
+                                            .attr('id', 'y-axis')
+                                            .call(yAxis)
+                                            .call((g) => {
+                                                g.select(".domain").remove();
+                                                g.selectAll(".tick line")
+                                                .style('opacity', 0.2)
+                                                .transition()
+                                                .duration(1000)
+                                                .ease(d3.easePoly)
+                                            });
+
+
+                                // Update scatter plot
+                                scatter
+                                    .data(filteredData)
+                                    .attr("cx", d => x(d.LON))
+                                    .attr("cy", d => y(d.LAT))
+                                    .style("fill",d=>legendVisible?colorScale(d.REG):'steelblue' )
+                                    
+                            });
+                        
+                            dateSliderContainer.append('text')
+                                .style('font-family', 'Arial')
+                                .style("font-size", "12px")
+                                .attr("text-anchor", "left")
+                                .text('Date Slider')
+
+                            dateSliderContainer.append("svg")
+                                .attr("width", dateSliderWidth + 100)
+                                .attr("height", dateSliderHeight)
+                                .append("g")
+                                .attr("transform", "translate(25, 10)")
+                                .call(dateSlider);            
+                        
+
+
+
+
+            
+                                // ADD ZOOM BEHAVIOUR 
+
+                                function activateZoom(){
+                                var zoom = d3.zoom()
+                                .scaleExtent([1, 10])
+                                .extent([[0,0], [width, height]])
+                                .on("zoom", updateZoom);
+                                
+                                svg.call(zoom);            
+
+                                function updateZoom(event){
+                                
+                                // recover the new scale
+                                const newX = event.transform.rescaleX(x);
+                                const newY = event.transform.rescaleY(y).nice();
+
+                                // update axes with these new boundaries
+                                
+                                svg.selectAll("#x-axis").remove().transition().duration(1000);
+                                svg.selectAll("#y-axis").remove().transition().duration(1000);
+
+                                const xAxis = d3.axisBottom().scale(newX)
+                                                .tickSizeOuter(1)
+                                                .tickFormat(d3.format(".3f"))
+                                                .tickSizeInner(10);
+                                const yAxis = d3.axisLeft().scale(newY)
+                                                .tickSize(-width)
+                                                .tickSizeOuter(0);
+
+                                const xAxisShow = svg.append('g')
+                                                    .attr('id', 'x-axis')
+                                                    .attr('transform', `translate(0,${height})`)
+                                                    .call(xAxis)
+                                                    .transition()
+                                                    .duration(1000)
+
+                                const yAxisShow = svg.append('g')
+                                                    .attr('id', 'y-axis')
+                                                    .call(yAxis)
+                                                    .call((g) => {
+                                                        g.select(".domain").remove();
+                                                        g.selectAll(".tick line")
+                                                        .style('opacity', 0.2)
+                                                        .transition()
+                                                        .duration(1000)
+                                                        .ease(d3.easePoly)
+                                                    })
+
+                                scatter
+                                    .attr('cx', function(d) {return newX(d.LON)})
+                                    .attr('cy', function(d) {return newY(d.LAT)})
+                                    .style('fill', d=>legendVisible?colorScale(d.REG):'steelblue')
+                                    .attr('r', 5);
+                                }
+                            }
+                            
+                            function deactivateZoom(){
+                                svg.on('.zoom', null)
+                            }
+
+                            d3.select("#flexSwitchCheckDefault2").on("change", function () {
+                                var isChecked = d3.select(this).property("checked");
+                                if (isChecked) {
+                                    activateZoom(); // Activate D3.js code
+                                } else {
+                                    deactivateZoom(); // Deactivate D3.js code
+                                }
+
+                                });
+
+
+
+                                // ADDING BRUSHING 
+
+                                function activateBrushing(){
+                                const brush = d3.brush()
+                                                .extent([[0, 0], [width, height]])
+                                                .on('start brush', brushed)
+
+                                const brushGroup = svg.append('g')
+                                                    .attr("class", "brush")
+                                                    .call(brush);
+
+                                function brushed(event)
+                                {
+                                    const brushExtent = event.selection;
+                                    scatter.classed("selectedBrush", d =>
+                                                brushExtent &&
+                                                brushExtent[0][0] <= x(d.LON) && x(d.LON) <= brushExtent[1][0] &&
+                                                brushExtent[0][1] <= y(d.LAT) && y(d.LAT) <= brushExtent[1][1]
+                                            );
+
+                                }
+                                }
+
+                                // Define a function to deactivate the brushing functionality
+                                function deactivateBrushing() {
+                                    // Remove brush group
+                                    svg.select('.brush').remove();
+                                }
+
+                                // Event listener for the switch button
+                                d3.select("#flexSwitchCheckDefault").on("change", function () {
+                                    var isChecked = d3.select(this).property("checked");
+                                    if (isChecked) {
+                                        activateBrushing(); // Activate brushing functionality
+                                    } else {
+                                        deactivateBrushing(); // Deactivate brushing functionality
+                                        scatter.classed("selectedBrush", false);
+                                    }
+                                });
+
+                                
+                  
+
+                            // BRUSHING AND ZOOMING
+                            
+                            // Define a function to activate the brushing functionality
+                            function activateBrushZooming(){
+                            // Defining the brush function
+                            const brush = d3.brush()
+                                            .on('end', brushed);
+
+                            // Creating a group element for the brush
+                            const brushGroup = svg.append('g')
+                                                .attr('class', 'brush')
+                                                .call(brush);
+
+
+                            // A function that set idleTimeOut to null
+                            var idleTimeout = null, 
+                                idleDelay = 350;
+                            
+                            
+                            // Function to update chart when brushing is invoked
+                            function brushed(event){
+                                brushExtent = event.selection;
+                                if (!brushExtent) // no selection
+                                {
+                                if (!idleTimeout) return idleTimeout=setTimeout(idled, idleDelay);
+                                const xx = x.domain(xExtent).nice();
+                                const yy = y.domain(yExtent).nice();
+
+                                svg.selectAll("#x-axis").remove().transition();
+                                svg.selectAll("#y-axis").remove().transition();
+
+                                const xAxis = d3.axisBottom().scale(xx)
+                                            .tickSizeInner(10)
+                                            .tickSizeOuter(0)
+                                const yAxis = d3.axisLeft().scale(yy)
+                                            .tickSize(-width)
+                                            .tickSizeOuter(0);
+
+                                const xAxisShow = svg.append('g')
+                                                .attr('id', 'x-axis')
+                                                .attr('transform', `translate(0,${height})`)
+                                                .call(xAxis)
+                                                .transition()
+                                                .duration(1000);
+
+                                const yAxisShow = svg.append('g')
+                                                .attr('id', 'y-axis')
+                                                .call(yAxis)
+                                                .call((g) => {
+                                                    g.select(".domain").remove();
+                                                    g.selectAll(".tick line")
+                                                    .style('opacity', 0.2)
+                                                    
+                                                });
+                                
+                                scatter.classed("selected", false); // Clear any existing selection
+                                
+                                }
+                                // selection is made
+                                else 
+                                {
+                                scatter.classed("selected", d =>
+                                                    brushExtent &&
+                                                    brushExtent[0][0] <= x(d.LON) && x(d.LON) <= brushExtent[1][0] &&
+                                                    brushExtent[0][1] <= y(d.LAT) && y(d.LAT) <= brushExtent[1][1]
+                                                );
+                                const bx = x.domain([brushExtent[0][0], brushExtent[1][0]].map(x.invert, x))
+                                    .nice();
+                                const by = y.domain([brushExtent[1][1], brushExtent[0][1]].map(y.invert, y))
+                                    .nice();
+
+                                svg.selectAll("#x-axis").remove().transition();
+                                svg.selectAll("#y-axis").remove().transition();
+                                
+                                const xAxis = d3.axisBottom().scale(bx)
+                                            .tickFormat(d3.format(".3f"))
+                                const yAxis = d3.axisLeft().scale(by)
+                                            
+
+                                const xAxisShow = svg.append('g')
+                                                .attr('id', 'x-axis')
+                                                .attr('transform', `translate(0,${height})`)
+                                                .call(xAxis)
+                                                .transition()
+                                                .duration(1000);
+
+                                const yAxisShow = svg.append('g')
+                                                .attr('id', 'y-axis')
+                                                .call(yAxis)
+                                                .call((g) => {
+                                                    g.select(".domain").remove();
+                                                    g.selectAll(".tick line")
+                                                    .style('opacity', 0.2)
+                                                    .transition()
+                                                    .duration(1000)
+                                                    .ease(d3.easePoly)
+                                                });
+
+                                //  Removes the brush selection  
+                                svg.select('.brush').call(brush.move, null);
+                                                            
+                                }
+
+                                // calling the zoom function to zoom when brushed
+                                zoomedBrush();
+                            }
+
+
+                            function idled() { idleTimeout = null; };
+
+                            // Function to zoom
+                            function zoomedBrush()
+                            {
+                                svg.select('#x-axis').transition().duration(750).call(xAxis);
+                                svg.select('#y-axis').transition().duration(750).call(yAxis);
+
+                                scatter.transition()
+                                    .attr('cx', function(d) {return x(d.LON)})
+                                    .attr('cy', function(d) {return y(d.LAT)})
+                                    .style('fill', d=>legendVisible?colorScale(d.REG):'steelblue')
+                                    .attr('r', 5);
+                            }
+                        }
+                        
+
+
+                        // Define a function to deactivate the brushing functionality
+                            function deactivateBrushZooming() {
+                                // Remove brush group
+                                svg.select('.brush').remove();
+                            }
+
+                            // Event listener for the switch button
+                            d3.select("#flexSwitchCheckDefault3").on("change", function () {
+                                var isChecked = d3.select(this).property("checked");
+                                if (isChecked) {
+                                    activateBrushZooming(); // Activate brushing functionality
+                                } else {
+                                    deactivateBrushZooming(); // Deactivate brushing functionality
+                                }
+                            });
+                                
+
+
+
+          
+
+        })
+        .catch( (e)=>{
+            throw e
+        });
+        
+        
+
+    </script>
+    <!-- script tag end -->
+
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js" integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossorigin="anonymous"></script>
+    <script src="Musah/popper.min.js"></script>
+  </body>
 </body>
 </html>
